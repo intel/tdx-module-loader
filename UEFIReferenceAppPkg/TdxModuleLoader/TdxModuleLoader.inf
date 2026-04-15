@@ -1,0 +1,44 @@
+## @file
+#
+#  UEFI app loads the TDX module with provided TdxBlob binary
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = TdxModuleLoader
+  FILE_GUID                      = 9f3cbe70-1728-45ff-8b24-7324b29cfe8a
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = X64
+#
+
+[Sources]
+  TdxModuleLoader.c
+  Helpers/TopologyMgr.c
+  Helpers/VmxContext.c
+  Helpers/Seamldr.c
+  Helpers/HandleFile.c
+  X64/AsmSeamcall.nasm
+
+[Packages]
+  MdePkg/MdePkg.dec
+  UEFIReferenceAppPkg/UEFIReferenceAppPkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  DevicePathLib
+
+[Protocols]
+  gEfiMpServiceProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+  gEfiLoadedImageProtocolGuid
+
+[Guids]
+  gEfiFileInfoGuid

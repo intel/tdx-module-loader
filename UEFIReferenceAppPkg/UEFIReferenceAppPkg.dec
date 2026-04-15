@@ -1,0 +1,8 @@
+[Defines]
+  DEC_SPECIFICATION              = 0x00010005
+  PACKAGE_NAME                   = UEFIReferenceAppPkg
+  PACKAGE_GUID                   = c9608a47-6bc3-4a38-8388-070822b6f30f
+  PACKAGE_VERSION                = 0.1
+
+[Includes.Common.Private]
+  IncludePrivate
