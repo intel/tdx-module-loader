@@ -5,8 +5,8 @@
 #include <AsmSeamcall.h>
 
 STATIC SEAMLDR_PARAMS_t* mSeamldrParams = NULL;
-STATIC SEAM_BLOB_HEADER_t* mTdxBlob = NULL;
-STATIC UINTN mBlobSize = 0;
+STATIC TDX_IMAGE_t* mTdxImage = NULL;
+STATIC UINTN mImageSize = 0;
 
 BOOLEAN
 EFIAPI
@@ -14,64 +14,81 @@ VerifyChecksum (
   VOID
   )
 {
-  UINT32 size = mTdxBlob->len;
-  UINT16 checksum = 0;
-  UINT16 *ptr = NULL;
+  UINTN   Size;
+  UINT16  Checksum = 0;
+  UINT16  *Ptr = NULL;
 
-  /* Handle the last byte if the size is odd */
-  if (size % 2) {
-    checksum += *((UINT8*)mTdxBlob + size - 1);
-    size--;
+  Size = mImageSize;
+  if (Size % sizeof(UINT16)) {
+    Checksum += *((UINT8 *)mTdxImage + Size - 1);
+    Size--;
   }
 
-  ptr = (UINT16*)mTdxBlob;
-  for (UINTN Index = 0; Index < size; Index += 2) {
-    checksum += *ptr;
-    ptr++;
+  Ptr = (UINT16 *)mTdxImage;
+  for (UINTN Index = 0; Index < Size; Index += sizeof(UINT16)) {
+    Checksum += *Ptr;
+    Ptr++;
   }
 
-  return (checksum == 0);
+  return (Checksum == 0);
 }
 
 EFI_STATUS
 EFIAPI
-SanityCheckTdxBlob (
-  IN UINTN ModuleSize,
-  IN UINTN SigSize
+SanityCheckTdxImage (
+  VOID
   )
 {
-  if (!mTdxBlob) {
-    DEBUG ((DEBUG_ERROR, "%a: TDX module blob is not loaded\n", __func__));
+  UINT64 SigstructSize;
+  UINT64 ModuleSize;
+  UINT64 ExpectedImageSize;
+
+  if (!mTdxImage) {
+    DEBUG ((DEBUG_ERROR, "%a: TDX module image is not loaded\n", __func__));
     return EFI_INVALID_PARAMETER;
   }
 
-  if (mBlobSize != mTdxBlob->len) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module blob: size mismatch (expected %u, got %llu)\n", __func__, mTdxBlob->len, mBlobSize));
+  if (mImageSize < sizeof(TDX_IMAGE_HEADER_t)) {
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: size too small (%llu bytes)\n", __func__, mImageSize));
     return EFI_LOAD_ERROR;
   }
 
-  if (CompareMem (mTdxBlob->signature, "TDX-BLOB", 8)) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module blob: bad signature\n", __func__));
-    return EFI_LOAD_ERROR;
-}
-
-  if (ModuleSize == 0) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module blob: empty module payload\n", __func__));
+  if (mTdxImage->Header.Version != TDX_IMAGE_VERSION_2) {
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: unsupported version 0x%x\n", __func__, mTdxImage->Header.Version));
     return EFI_LOAD_ERROR;
   }
 
-  if (ModuleSize > SEAMLDR_PARAMS_NUM_MOD_PAGES * SIZE_4KB) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module blob: module size too large (%u bytes)\n", __func__, ModuleSize));
+  if (CompareMem (mTdxImage->Header.Signature, "TDX-BLOB", sizeof(mTdxImage->Header.Signature))) {
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: bad signature\n", __func__));
     return EFI_LOAD_ERROR;
   }
 
-  if (SigSize != SIZE_4KB) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module blob: invalid signature size (%u bytes)\n", __func__, SigSize));
+  if (mTdxImage->Header.ModuleNumPages == 0) {
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: empty module payload\n", __func__));
+    return EFI_LOAD_ERROR;
+  }
+
+  if (mTdxImage->Header.SigstructNumPages > SEAMLDR_PARAMS_NUM_SIG_PAGES ||
+      mTdxImage->Header.ModuleNumPages > SEAMLDR_PARAMS_NUM_MOD_PAGES) {
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: invalid page counts (sigstruct %u, module %u)\n", __func__, mTdxImage->Header.SigstructNumPages, mTdxImage->Header.ModuleNumPages));
+    return EFI_LOAD_ERROR;
+  }
+
+  if (!IsZeroBuffer (mTdxImage->Header.Reserved, sizeof(mTdxImage->Header.Reserved))) {
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: reserved bytes must be zero\n", __func__));
     return EFI_LOAD_ERROR;
   }
 
   if (!VerifyChecksum ()) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module blob: bad checksum\n", __func__));
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: bad checksum\n", __func__));
+    return EFI_LOAD_ERROR;
+  }
+
+  SigstructSize = (UINT64)mTdxImage->Header.SigstructNumPages * EFI_PAGE_SIZE;
+  ModuleSize = (UINT64)mTdxImage->Header.ModuleNumPages * EFI_PAGE_SIZE;
+  ExpectedImageSize = sizeof(TDX_IMAGE_HEADER_t) + SigstructSize + ModuleSize;
+  if (ExpectedImageSize != mImageSize) {
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image: size mismatch (expected %llu, got %llu)\n", __func__, ExpectedImageSize, mImageSize));
     return EFI_LOAD_ERROR;
   }
 
@@ -88,8 +105,7 @@ CreateSeamldrParams (
   EFI_FILE_HANDLE FileHandle = NULL;
   UINT64          FileSize = 0;
   VOID            *Buffer = NULL;
-  UINTN           ModuleSize = 0;
-  UINTN           SigSize = 0;
+  UINTN           SigstructSize = 0;
   UINT64          NumberModPages = 0;
   UINT8           *Ptr;
 
@@ -116,7 +132,7 @@ CreateSeamldrParams (
     goto EFI_EXIT;
   }
 
-  if (FileSize < sizeof(SEAM_BLOB_HEADER_t)) {
+  if (FileSize < sizeof(TDX_IMAGE_HEADER_t)) {
     DEBUG ((DEBUG_ERROR, "%a: Invalid module file %s: size too small (%llu bytes)\n", __func__, ModulePath, FileSize));
     Status = EFI_LOAD_ERROR;
     goto EFI_EXIT;
@@ -141,18 +157,17 @@ CreateSeamldrParams (
     goto EFI_EXIT;
   }
 
-  mTdxBlob = (SEAM_BLOB_HEADER_t*)Buffer;
-  mBlobSize = FileSize;
+  mTdxImage = (TDX_IMAGE_t*)Buffer;
+  mImageSize = FileSize;
 
-  ModuleSize = mBlobSize - mTdxBlob->offset_of_module;
-  NumberModPages = DIV_ROUND_UP(ModuleSize, SIZE_4KB);
-  SigSize = mTdxBlob->offset_of_module - sizeof(SEAM_BLOB_HEADER_t);
-
-  Status = SanityCheckTdxBlob (ModuleSize, SigSize);
+  Status = SanityCheckTdxImage ();
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module blob in file %s: %r\n", __func__, ModulePath, Status));
+    DEBUG ((DEBUG_ERROR, "%a: Invalid TDX module image in file %s: %r\n", __func__, ModulePath, Status));
     goto EFI_EXIT;
   }
+
+  NumberModPages = mTdxImage->Header.ModuleNumPages;
+  SigstructSize = mTdxImage->Header.SigstructNumPages * EFI_PAGE_SIZE;
 
   mSeamldrParams = (SEAMLDR_PARAMS_t*)AllocatePages (EFI_SIZE_TO_PAGES (sizeof(*mSeamldrParams)));
   if (!mSeamldrParams) {
@@ -166,18 +181,19 @@ CreateSeamldrParams (
 
   mSeamldrParams->scenario = 0; // Load
 
-  mSeamldrParams->sigstruct_pa = (UINT64)mTdxBlob->data;
+  mSeamldrParams->sigstruct_pa = (UINT64)mTdxImage->Payload;
+
   mSeamldrParams->num_module_pages = NumberModPages;
 
-  Ptr = (UINT8*)mTdxBlob + mTdxBlob->offset_of_module;
+  Ptr = (UINT8*)mTdxImage->Payload + SigstructSize;
 
   /*
    * sigstruct_pa and mod_pages_pa_list[] must be 4K-aligned. The well-designed
-   * TdxBlob can ensure they are aligned once TdxBlob is 4k-aligned.
+   * TdxImage can ensure they are aligned once TdxImage is 4k-aligned.
    */
   for (UINTN Index = 0; Index < mSeamldrParams->num_module_pages; Index++) {
     mSeamldrParams->mod_pages_pa_list[Index] = (UINT64)Ptr;
-    Ptr += SIZE_4KB;
+    Ptr += EFI_PAGE_SIZE;
   }
 
 EFI_EXIT:
@@ -196,10 +212,10 @@ DestroySeamldrParams (
     mSeamldrParams = NULL;
   }
 
-  if (mTdxBlob) {
-    FreePages (mTdxBlob, EFI_SIZE_TO_PAGES (mBlobSize));
-    mTdxBlob = NULL;
-    mBlobSize = 0;
+  if (mTdxImage) {
+    FreePages (mTdxImage, EFI_SIZE_TO_PAGES (mImageSize));
+    mTdxImage = NULL;
+    mImageSize = 0;
   }
 
 }

@@ -8,7 +8,7 @@
 #include <VmxContext.h>
 #include <Seamldr.h>
 
-#define TDX_BLOB_FILE_NAME  L"TDX-BLOB"
+#define TDX_IMAGE_FILE_NAME  L"TDX-BLOB"
 
 EFI_STATUS
 EFIAPI
@@ -50,15 +50,15 @@ UefiMain (
   }
 
   /*
-   * Load TDX-BLOB from the same filesystem path as the current UEFI application.
+   * Load tdx_image from the same filesystem path as the current UEFI application.
    */
   Status = ResolveFilePathRelativeToLoadedImage (
              ImageHandle,
-             TDX_BLOB_FILE_NAME,
+             TDX_IMAGE_FILE_NAME,
              &ResolvedModulePath
              );
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "%a: Failed to resolve TDX-BLOB path from the loaded image: %r\n", __func__, Status));
+    DEBUG ((DEBUG_ERROR, "%a: Failed to resolve tdx_image path from the loaded image: %r\n", __func__, Status));
     goto RECLAIM_EXIT;
   }
 

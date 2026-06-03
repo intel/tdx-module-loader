@@ -6,6 +6,8 @@
 #include <Library/UefiLib.h>
 
 #define SEAMLDR_PARAMS_NUM_MOD_PAGES 496
+#define SEAMLDR_PARAMS_NUM_SIG_PAGES 1
+#define TDX_IMAGE_VERSION_2          0x200
 #define DIV_ROUND_UP(X, Y) (((X) + (Y) - 1) / (Y))
 
 #pragma pack(push, 1)
@@ -20,15 +22,18 @@ typedef struct {
 } SEAMLDR_PARAMS_t;
 
 typedef struct {
-  UINT16  version;
-  UINT16  checksum;
-  UINT32  offset_of_module;
-  UINT8   signature[8]; // "TDX-BLOB"
-  UINT32  len;
-  UINT32  resv1;
-  UINT64  resv2[509];
-  UINT8   data[];
-} SEAM_BLOB_HEADER_t;
+  UINT16  Version;
+  UINT16  Checksum;
+  UINT8   Signature[8]; // "TDX-BLOB"
+  UINT32  SigstructNumPages;
+  UINT32  ModuleNumPages;
+  UINT8   Reserved[4076];
+} TDX_IMAGE_HEADER_t;
+
+typedef struct {
+  TDX_IMAGE_HEADER_t Header;
+  UINT8              Payload[];
+} TDX_IMAGE_t;
 
 #pragma pack(pop)
 

@@ -1,6 +1,6 @@
 ## @file
 #
-#  UEFI app loads the TDX module with provided TdxBlob binary
+#  UEFI app loads the TDX module with provided tdx_image binary
 #
 ##
 
