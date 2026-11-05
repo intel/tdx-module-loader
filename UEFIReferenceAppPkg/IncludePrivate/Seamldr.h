@@ -16,17 +16,17 @@
 #define SEAMLDR_PARAMS_NUM_PAGES          16
 #define SEAMLDR_PARAMS_NUM_MOD_PA_ENTRIES (496 + 512 * (SEAMLDR_PARAMS_NUM_PAGES - 1))
 #define SEAMLDR_PARAMS_NUM_MOD_PAGES      (SEAMLDR_PARAMS_NUM_MOD_PA_ENTRIES - SEAMLDR_PARAMS_NUM_PAGES)
-#define SEAMLDR_PARAMS_NUM_SIG_PAGES 1
+#define SEAMLDR_PARAMS_NUM_SIG_PAGES      4
 #define TDX_IMAGE_VERSION_2          0x200
 #define DIV_ROUND_UP(X, Y) (((X) + (Y) - 1) / (Y))
 
 #pragma pack(push, 1)
 
 typedef struct {
-  UINT32 version;
+  UINT32 version; // 0: single-page sigstruct, 1: multi-page sigstruct
   UINT32 scenario; // 0: Load, 1: Update
-  UINT64 sigstruct_pa; // 4 KiB aligned PA to TdxSeamSig
-  UINT8  reserved[104];
+  UINT64 sigstruct_pages_pa_list[SEAMLDR_PARAMS_NUM_SIG_PAGES]; // 4 KiB aligned PAs of TdxSeamSig pages
+  UINT8  reserved[80];
   UINT64 num_module_pages; // Module size in 4 KiB pages
   UINT64 mod_pages_pa_list[SEAMLDR_PARAMS_NUM_MOD_PA_ENTRIES];
 } SEAMLDR_PARAMS_t;

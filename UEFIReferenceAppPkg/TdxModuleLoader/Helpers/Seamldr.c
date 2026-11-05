@@ -203,21 +203,30 @@ CreateSeamldrParams (
     goto EFI_EXIT;
   }
 
-  // version and reserved bits must be 0
+  // reserved bits must be 0
   ZeroMem (mSeamldrParams, sizeof(*mSeamldrParams));
+
+  /*
+   * Use version 1 only for multi-page sigstructs, to stay compatible with
+   * old SEAMLDRs that lack version 1 support.
+   */
+  if (mTdxImage->Header.SigstructNumPages > 1) {
+    mSeamldrParams->version = 1;
+  }
 
   mSeamldrParams->scenario = 0; // Load
 
-  mSeamldrParams->sigstruct_pa = (UINT64)mTdxImage->Payload;
-
   mSeamldrParams->num_module_pages = NumberModPages;
 
-  Ptr = (UINT8*)mTdxImage->Payload + SigstructSize;
-
   /*
-   * sigstruct_pa and mod_pages_pa_list[] must be 4K-aligned. The well-designed
-   * TdxImage can ensure they are aligned once TdxImage is 4k-aligned.
+   * The pages in sigstruct_pages_pa_list[] and mod_pages_pa_list[] must be
+   * 4K-aligned. The well-designed TdxImage can ensure they are aligned once
+   * TdxImage is 4k-aligned.
    */
+  Ptr = (UINT8*)mTdxImage->Payload;
+  PopulatePaList (mSeamldrParams->sigstruct_pages_pa_list, Ptr, mTdxImage->Header.SigstructNumPages);
+
+  Ptr += SigstructSize;
   PopulatePaList (mSeamldrParams->mod_pages_pa_list, Ptr, mTdxImage->Header.ModuleNumPages);
 
 EFI_EXIT:
