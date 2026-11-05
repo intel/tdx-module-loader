@@ -95,6 +95,33 @@ SanityCheckTdxImage (
   return EFI_SUCCESS;
 }
 
+/*
+ * Write the address of each page of Buffer to PaList[]. Caller guarantees
+ * that the array is big enough. If PaList[] spans multiple pages, point the
+ * last entry of each page to the next page.
+ */
+VOID
+EFIAPI
+PopulatePaList (
+  OUT UINT64  *PaList,
+  IN  UINT8   *Buffer,
+  IN  UINT32  NumPages
+  )
+{
+  UINTN  Index;
+  UINTN  Entry;
+
+  for (Index = 0, Entry = 0; Index < NumPages; Index++) {
+    if (((UINTN)&PaList[Entry + 1] & EFI_PAGE_MASK) == 0) {
+      PaList[Entry] = (UINT64)(UINTN)&PaList[Entry + 1];
+      Entry++;
+    }
+
+    PaList[Entry] = (UINT64)(UINTN)(Buffer + Index * EFI_PAGE_SIZE);
+    Entry++;
+  }
+}
+
 EFI_STATUS
 EFIAPI
 CreateSeamldrParams (
@@ -191,10 +218,7 @@ CreateSeamldrParams (
    * sigstruct_pa and mod_pages_pa_list[] must be 4K-aligned. The well-designed
    * TdxImage can ensure they are aligned once TdxImage is 4k-aligned.
    */
-  for (UINTN Index = 0; Index < mSeamldrParams->num_module_pages; Index++) {
-    mSeamldrParams->mod_pages_pa_list[Index] = (UINT64)Ptr;
-    Ptr += EFI_PAGE_SIZE;
-  }
+  PopulatePaList (mSeamldrParams->mod_pages_pa_list, Ptr, mTdxImage->Header.ModuleNumPages);
 
 EFI_EXIT:
   FileHandle->Close (FileHandle);
